@@ -205,7 +205,12 @@ for the event being created.
 struct perf_event_attr {
     __u32 type;                 /* Type of event */
     __u32 size;                 /* Size of attribute structure */
-    __u64 config;               /* Type-specific configuration */
+
+    /* Type-specific configuration */
+    union {
+        __u64 config;
+        __u64 probe_desc; /* ptr to struct probe_desc */
+    };
 
     union {
         __u64 sample_period;    /* Period of sampling */
@@ -244,8 +249,13 @@ struct perf_event_attr {
                                    due to exec */
           use_clockid    :  1,  /* use clockid for time fields */
           context_switch :  1,  /* context switch data */
+          write_backward :  1,  /* Write ring buffer from end to beginning */
+          namespaces     :  1,  /* include namespaces data */
 
-          __reserved_1   : 37;
+          /* For PERF_TYPE_PROBE */
+          is_uprobe      :  1,  /* 0 for kprobe, 1 for uprobe */
+          is_return      :  1,  /* 0 for [k,u]probe, 1 for [k,u]retprobe */
+          __reserved_1   : 33;
 
     union {
         __u32 wakeup_events;    /* wakeup every n events */
@@ -336,6 +346,13 @@ field.
 For instance,
 .I /sys/bus/event_source/devices/cpu/type
 contains the value for the core CPU PMU, which is usually 4.
+.TP
+.BR PERF_TYPE_PROBE " (since Linux 4.TBD)"
+This indicates a kprobe or uprobe should be created and
+attached to the file descriptor.
+See fields
+.IR probe_desc ", " is_uprobe ", and " is_return
+for more details.
 .RE
 .TP
 .I "size"
@@ -627,6 +644,67 @@ then leave
 .I config
 set to zero.
 Its parameters are set in other places.
+.PP
+If
+.I type
+is
+.BR PERF_TYPE_PROBE ,
+.I probe_desc
+is used instead of
+.IR config .
+.RE
+.TP
+.I probe_desc
+The
+.I probe_desc
+field is used with
+.I type
+of
+.BR PERF_TYPE_PROBE ,
+to save a pointer to struct probe_desc:
+.PP
+.in +8n
+.EX
+struct probe_desc {
+    union {
+        __aligned_u64 func;
+        __aligned_u64 path;
+    };
+    union {
+        __aligned_u64 addr;
+        __u64         offset;
+    };
+};
+.EE
+Different fields of struct probe_desc are used to describe kprobes
+and uprobes. For kprobes: use
+.I func
+and
+.IR offset ,
+or use
+.I addr
+and leave
+.I func
+as NULL. For uprobe: use
+.I path
+and
+.IR offset .
+.RE
+.TP
+.IR is_uprobe ", " is_return
+These two bits are used with
+.I type
+of
+.BR PERF_TYPE_PROBE ,
+to specify type of the probe:
+.PP
+.in +8n
+.EX
+is_uprobe == 0, is_return == 0: kprobe
+is_uprobe == 0, is_return == 1: kretprobe
+is_uprobe == 1, is_return == 0: uprobe
+is_uprobe == 1, is_return == 1: uretprobe
+.EE
 .RE
 .TP
 .IR sample_period ", " sample_freq
